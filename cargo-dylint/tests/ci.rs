@@ -8,12 +8,14 @@ use regex::Regex;
 use semver::{Op, Version};
 use similar_asserts::SimpleDiff;
 use std::{
-    env::{set_current_dir, set_var, var},
-    ffi::OsStr,
+    collections::HashSet,
+    env::{self, set_current_dir, set_var, var},
+    ffi::{OsStr, OsString},
     fmt::Write as _,
     fs::{read_dir, read_to_string, write},
     io::{Write as _, stderr},
     path::{Component, Path},
+    process::Command,
     sync::{LazyLock, Mutex},
 };
 
@@ -559,14 +561,26 @@ fn markdown_link_check() {
     // smoelius: https://github.com/rust-lang/crates.io/issues/788
     let config = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/markdown_link_check.json");
 
+    // Process the config file to replace ${GITHUB_TOKEN} with the actual token if available
+    let config_content = read_to_string(&config).unwrap();
+    let config_content = if let Ok(github_token) = std::env::var("GITHUB_TOKEN") {
+        config_content.replace("${GITHUB_TOKEN}", &github_token)
+    } else {
+        // Skip the test entirely if no token is available
+        println!(
+            "Warning: No GITHUB_TOKEN environment variable found. Some links may fail due to rate limiting."
+        );
+        // We still continue with the test but without token substitution
+        config_content
+    };
+
+    // Write the processed config to a temporary file
+    let temp_config = tempdir.path().join("markdown_link_check.json");
+    write(&temp_config, config_content).unwrap();
+
     for entry in walkdir(true).with_extension("md") {
         let entry = entry.unwrap();
         let path = entry.path();
-
-        // Skip CHANGELOG.md and symlinks to avoid hitting GitHub rate limits
-        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) || path.is_symlink() {
-            continue;
-        }
 
         let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
 
@@ -574,7 +588,7 @@ fn markdown_link_check() {
             .args([
                 "markdown-link-check",
                 "--config",
-                &config.to_string_lossy(),
+                &temp_config.to_string_lossy(),
                 "--retry=1s",
                 &path_buf.to_string_lossy(),
             ])
