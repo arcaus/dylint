@@ -235,6 +235,7 @@ jobs:
           fi
         env:
           CARGO_INCREMENTAL: 0
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   all-checks:
     needs: [lint, test]
