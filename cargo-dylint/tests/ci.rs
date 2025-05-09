@@ -3,7 +3,7 @@
 use anyhow::Result;
 use assert_cmd::Command;
 use cargo_metadata::{Dependency, Metadata, MetadataCommand};
-use dylint_internal::{cargo::current_metadata, env, examples, home};
+use dylint_internal::{cargo::current_metadata, env as dylint_env, examples, home};
 use regex::Regex;
 use semver::{Op, Version};
 use similar_asserts::SimpleDiff;
@@ -25,7 +25,7 @@ static DESCRIPTION_REGEX: LazyLock<Regex> =
 #[ctor::ctor]
 fn initialize() {
     set_current_dir("..").unwrap();
-    set_var(env::CARGO_TERM_COLOR, "never");
+    set_var(dylint_env::CARGO_TERM_COLOR, "never");
 }
 
 #[test]
@@ -356,7 +356,7 @@ fn format_example_readmes() {
 
         let readme_path = example_dir.join("README.md");
 
-        if env::enabled("BLESS") {
+        if dylint_env::enabled("BLESS") {
             write(readme_path, readme).unwrap();
         } else {
             let readme_expected = read_to_string(&readme_path).unwrap();
@@ -389,7 +389,7 @@ fn hack_feature_powerset_udeps() {
     Command::new("rustup")
         // smoelius: `--check-cfg cfg(test)` to work around the following issue:
         // https://github.com/est31/cargo-udeps/issues/293
-        .env(env::RUSTFLAGS, "-D warnings --check-cfg cfg(test)")
+        .env(dylint_env::RUSTFLAGS, "-D warnings --check-cfg cfg(test)")
         .args([
             "run",
             "nightly",
@@ -559,14 +559,26 @@ fn markdown_link_check() {
     // smoelius: https://github.com/rust-lang/crates.io/issues/788
     let config = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/markdown_link_check.json");
 
+    // Process the config file to replace ${GITHUB_TOKEN} with the actual token if available
+    let config_content = read_to_string(&config).unwrap();
+    let config_content = if let Ok(github_token) = var("GITHUB_TOKEN") {
+        config_content.replace("${GITHUB_TOKEN}", &github_token)
+    } else {
+        // Skip the test entirely if no token is available
+        println!(
+            "Warning: No GITHUB_TOKEN environment variable found. Some links may fail due to rate limiting."
+        );
+        // We still continue with the test but without token substitution
+        config_content
+    };
+
+    // Write the processed config to a temporary file
+    let temp_config = tempdir.path().join("markdown_link_check.json");
+    write(&temp_config, config_content).unwrap();
+
     for entry in walkdir(true).with_extension("md") {
         let entry = entry.unwrap();
         let path = entry.path();
-
-        // Skip CHANGELOG.md and symlinks to avoid hitting GitHub rate limits
-        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) || path.is_symlink() {
-            continue;
-        }
 
         let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
 
@@ -574,7 +586,7 @@ fn markdown_link_check() {
             .args([
                 "markdown-link-check",
                 "--config",
-                &config.to_string_lossy(),
+                &temp_config.to_string_lossy(),
                 "--retry=1s",
                 &path_buf.to_string_lossy(),
             ])
@@ -774,7 +786,7 @@ fn preserves_cleanliness(test_name: &str, ignore_blank_lines: bool, f: impl FnOn
     let _lock = MUTEX.lock().unwrap();
 
     // smoelius: Do not skip tests when running on GitHub.
-    if var(env::CI).is_err() && dirty(false).is_some() {
+    if var(dylint_env::CI).is_err() && dirty(false).is_some() {
         #[allow(clippy::explicit_write)]
         writeln!(
             stderr(),
