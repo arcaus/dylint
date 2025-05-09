@@ -558,11 +558,13 @@ fn markdown_link_check() {
 
     // smoelius: https://github.com/rust-lang/crates.io/issues/788
     let config = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/markdown_link_check.json");
-    
+
     // Check if GitHub token is available
     let github_token = std::env::var("GITHUB_TOKEN").ok();
     if github_token.is_none() {
-        println!("Warning: GITHUB_TOKEN not available. GitHub API rate limiting may cause test failures.");
+        println!(
+            "Warning: GITHUB_TOKEN not available. GitHub API rate limiting may cause test failures."
+        );
     }
 
     for entry in walkdir(true).with_extension("md") {
@@ -570,7 +572,7 @@ fn markdown_link_check() {
         let path = entry.path();
 
         // Skip CHANGELOG.md and symlinks to avoid hitting GitHub rate limits
-        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) || path.is_symlink() {
+        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) {
             continue;
         }
 
@@ -586,12 +588,12 @@ fn markdown_link_check() {
             &path_buf.to_string_lossy(),
         ])
         .current_dir(&tempdir);
-        
+
         // Add GitHub token to environment if available
         if let Some(token) = &github_token {
             cmd.env("GITHUB_TOKEN", token);
         }
-        
+
         let assert = cmd.assert();
         let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
 
