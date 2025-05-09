@@ -558,6 +558,12 @@ fn markdown_link_check() {
 
     // smoelius: https://github.com/rust-lang/crates.io/issues/788
     let config = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/markdown_link_check.json");
+    
+    // Check if GitHub token is available
+    let github_token = std::env::var("GITHUB_TOKEN").ok();
+    if github_token.is_none() {
+        println!("Warning: GITHUB_TOKEN not available. GitHub API rate limiting may cause test failures.");
+    }
 
     for entry in walkdir(true).with_extension("md") {
         let entry = entry.unwrap();
@@ -570,16 +576,23 @@ fn markdown_link_check() {
 
         let path_buf = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
 
-        let assert = Command::new("npx")
-            .args([
-                "markdown-link-check",
-                "--config",
-                &config.to_string_lossy(),
-                "--retry=1s",
-                &path_buf.to_string_lossy(),
-            ])
-            .current_dir(&tempdir)
-            .assert();
+        // Create command with environment variable if token is available
+        let mut cmd = Command::new("npx");
+        cmd.args([
+            "markdown-link-check",
+            "--config",
+            &config.to_string_lossy(),
+            "--retry=1s",
+            &path_buf.to_string_lossy(),
+        ])
+        .current_dir(&tempdir);
+        
+        // Add GitHub token to environment if available
+        if let Some(token) = &github_token {
+            cmd.env("GITHUB_TOKEN", token);
+        }
+        
+        let assert = cmd.assert();
         let stdout = std::str::from_utf8(&assert.get_output().stdout).unwrap();
 
         assert!(
