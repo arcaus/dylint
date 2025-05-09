@@ -564,7 +564,7 @@ fn markdown_link_check() {
         let path = entry.path();
 
         // Skip CHANGELOG.md and symlinks to avoid hitting GitHub rate limits
-        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) || path.is_symlink() {
+        if path.file_name() == Some(OsStr::new("CHANGELOG.md")) {
             continue;
         }
 
